@@ -3,7 +3,8 @@ import math
 import drawwh
 import scipy.sparse
 
-class Mesh():
+
+class Mesh:
     def __init__(self, faces, coordinates = None):
         self.faces = faces
         vertices = set(i for f in faces for i in f)
@@ -29,27 +30,55 @@ class Mesh():
         
 
     def angleDefect(self, vertex): # vertex is an integer (vertex index from 0 to self.n-1)
-        # Ne Delat'
+        # TODO: Not to do
         raise NotImplementedError
 
     def build_link(self, v):
-        def get_edge
-        def get_opposite_edge(face, v):
+        def get_edges(face):
+            return (face[0], face[1]), (face[1], face[2]), (face[2], face[0])
 
+        def get_opposite_edge(edges, v):
+            for edge in edges:
+                if v not in edge:
+                    return edge
 
         contain = [f for f in self.faces if v in f]
+        edges = []
+        # Take edge without `v'
+        for face in contain:
+            edgs = get_edges(face)
+            edges.append(get_opposite_edge(edgs, v))
+
+        # for all that contain v
+        # Enumerate it
+        link = list(enumerate(edges))
+        # return link
+        return link
+
+
+    def get_angles(self, i, j, link):
+        n = [x for x in link if x[1]==j]
+        init = np.hypot(self.coordinates[i-1], self.coordinates[j-1])
+        prev = link[n[0][0]-1][1]-1 if n[0][0]-1 >= 0 else link[len(link)-1][1]-1
+        next = link[n[0][0]+1][1] if n[0][0]+1 < len(link) else link[len(link)-1][1]
+        alpha = np.hypot(self.coordinates[prev], self.coordinates[i-1]) / init
+        betha = self.coordinates[next]
 
 
 
-    def buildLaplacianOperator(self, anchors = None, anchor_weight = 1.): # anchors is a list of vertex indices, anchor_weight is a positive number
-        if anchors == None:
+
+    def LaplaceOperator(self, anchors = None, anchor_weight = 1.): # anchors is a list of vertex indices, anchor_weight is a positive number
+        if anchors is None:
             anchors = []
 
         vertices = set(i for f in self.faces for i in f)
         matr = scipy.sparse.csr_matrix((self.n, self.n))
+
         for i in range(self.n):
             for vertex in self.n_i(i):
-                alpha, betha = self.build_link(i)
+                link_v = self.build_link(i)
+
+                #alpha, betha = get angles()
                 matr[i][vertex] = 0.5 * (
                         np.cos(matr[i][vertex]) / np.sin(matr[i][vertex]) +
                         np.cos(matr[i][vertex]) / np.sin(matr[i][vertex]))
@@ -91,5 +120,4 @@ class Mesh():
 
 def dragon(): #
     mesh = Mesh.fromobj("dragon.obj")
-    raise NotImplementedError
     mesh.draw()
