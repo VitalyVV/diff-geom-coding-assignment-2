@@ -1,7 +1,7 @@
-import numpy as np
-import math
 import drawwh
+import numpy as np
 import scipy.sparse
+import scipy.sparse.linalg
 
 
 class Mesh:
@@ -19,11 +19,13 @@ class Mesh:
             assert self.n == len(coordinates)
             for c in coordinates:
                 assert len(c)==3
-    
+
+
     @classmethod
     def fromobj(cls, filename):
         faces, vertices = drawwh.obj_read(filename)
         return cls(faces, vertices)
+
 
     def draw(self):
         drawwh.draw(self.faces, self.coordinates.tolist())
@@ -57,14 +59,42 @@ class Mesh:
 
 
     def get_angles(self, i, j, link):
-        n = [x for x in link if x[1]==j]
-        init = np.hypot(self.coordinates[i-1], self.coordinates[j-1])
-        prev = link[n[0][0]-1][1]-1 if n[0][0]-1 >= 0 else link[len(link)-1][1]-1
-        next = link[n[0][0]+1][1] if n[0][0]+1 < len(link) else link[len(link)-1][1]
-        alpha = np.hypot(self.coordinates[prev], self.coordinates[i-1]) / init
-        betha = self.coordinates[next]
+        """
+        Calculate angles between neighbors between (ith, jth) edge.
+            j*
+          /  | \
+        *a _*i _*b    ->  a, b is the needed angles.
+         \      /
+          \   /
+            *
+        :param i: ith vertex
+        :param j: jth vertex
+        :param link: link including jth vertex over ith vertex
+        :return: cotan(alpha), cotan(beta)
+        """
+        def hypot(x, y):
+            """
+            np.hypot do it elementwise and not returning required result
+            """
+            return np.sqrt((x[0] - y[0]) ** 2 + (x[1] - y[1]) ** 2 + (x[2] - y[2]) ** 2)
+
+        # TO BE REFACTORED
+        # Use list of one item to proceed, this item can be obtained many different ways
+        n = [x for x in link if j == x[1][0]]
+
+        init  = hypot(self.coordinates[i], self.coordinates[j])
+        prev  = link[n[0][0]-1][0] if n[0][0]-1 >= 0 else link[len(link)-1][0]
+        next_ = link[n[0][0]+1][0] if n[0][0]+1 < len(link) else link[0][0]
+        alpha = hypot(self.coordinates[prev], self.coordinates[i]) / init
+        betha = hypot(self.coordinates[next_], self.coordinates[i]) / init
+        return alpha, betha
 
 
+    def cotan(self, i, j):
+        link_v = self.build_link(i)
+        alpha, betha = self.get_angles(i, j, link_v)
+
+        return 0.5 * (alpha + betha)
 
 
     def LaplaceOperator(self, anchors = None, anchor_weight = 1.): # anchors is a list of vertex indices, anchor_weight is a positive number
@@ -74,23 +104,19 @@ class Mesh:
         vertices = set(i for f in self.faces for i in f)
         matr = scipy.sparse.csr_matrix((self.n, self.n))
 
+        for i in vertices:
+            for j in self.n_i(i):
+                matr[i,j] = self.cotan(i, j)
+
+        # TO REFACTOR
+        # It is very ad hoc to calculate sum like this
         for i in range(self.n):
-            for vertex in self.n_i(i):
-                link_v = self.build_link(i)
-
-                #alpha, betha = get angles()
-                matr[i][vertex] = 0.5 * (
-                        np.cos(matr[i][vertex]) / np.sin(matr[i][vertex]) +
-                        np.cos(matr[i][vertex]) / np.sin(matr[i][vertex]))
-
-        for i in range(self.n):
-            sumo = 0
-            for vertex in self.n_i(i):
-                sumo += matr[i][vertex]
-            matr[i][i] = sumo
+            matr[i, i] = sum(matr[i].data)
 
 
-        raise NotImplementedError
+        self.laplace_operator = matr
+        self.compute_inversion()
+
 
     def get_all_edges(self):
         edges = []
@@ -102,8 +128,16 @@ class Mesh:
         return edges
 
     def n_i(self, vert):
-        def get_opposite_vertex(edge, vertex):
-            return edge[0] if vertex == edge[1] else edge[1]
+        """
+        :param vert:
+        :return: list of vertices indexes
+        """
+
+        # TO REFACTOR:
+        # It can be written as an local function def ...
+        get_opposite_vertex = lambda e, v: e[0] if v == e[1] else e[1]
+
+
         edges = self.get_all_edges()
         nofi = []
         for edge in edges:
@@ -112,12 +146,42 @@ class Mesh:
 
         return nofi
 
+
+    def compute_inversion(self):
+        self.inversion = scipy.sparse.linalg.inv(self.laplace_operator.transpose() * self.laplace_operator) * self.laplace_operator
+
+
+    def forwardEuler(self, h):
+
+        # TO MAYBE REFACTOR
+        # Probably can be done without splitting to axises
+        eps = 0.0001
+        x = self.inversion * self.coordinates[:, 0]
+        y = self.inversion * self.coordinates[:, 1]
+        z = self.inversion * self.coordinates[:, 2]
+        arr = np.array([x, y ,z])
+        while (self.coordinates.any() - arr) ** 2 > eps:
+            self.coordinates[:, 0] += h * x
+            self.coordinates[:, 1] += h * y
+            self.coordinates[:, 2] += h * z
+
     def smoothen(self):
-        raise NotImplementedError
+        if self.laplace_operator is None:
+            raise NotImplementedError
+        else:
+            self.forwardEuler(0.001)
+
 
     def transform(self, anchors, anchor_coordinates, anchor_weight = 1.):# anchors is a list of vertex indices, anchor_coordinates is a list of same length of vertex coordinates (arrays of length 3), anchor_weight is a positive number
         raise NotImplementedError
 
 def dragon(): #
-    mesh = Mesh.fromobj("dragon.obj")
+    mesh = Mesh.fromobj("teddy.obj")
+    mesh.LaplaceOperator()
+    # TODO: Fix problem with get_angles
+    mesh.smoothen()
     mesh.draw()
+
+
+if __name__ == '__main__':
+    dragon()
