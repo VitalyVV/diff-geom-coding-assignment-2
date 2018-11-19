@@ -154,16 +154,32 @@ class Mesh:
     def forwardEuler(self, h):
 
         # TO MAYBE REFACTOR
-        # Probably can be done without splitting to axises
+        # Probably can be done without splitting to axises and use different approach overall
         eps = 0.0001
-        x = self.inversion * self.coordinates[:, 0]
-        y = self.inversion * self.coordinates[:, 1]
-        z = self.inversion * self.coordinates[:, 2]
-        arr = np.array([x, y ,z])
-        while (self.coordinates.any() - arr) ** 2 > eps:
-            self.coordinates[:, 0] += h * x
-            self.coordinates[:, 1] += h * y
-            self.coordinates[:, 2] += h * z
+        f = self.coordinates
+        f[:, 0] = self.inversion * self.coordinates[:, 0]
+        f[:, 1] = self.inversion * self.coordinates[:, 1]
+        f[:, 2] = self.inversion * self.coordinates[:, 2]
+        while (self.coordinates - f).any() > eps:
+            self.coordinates[:, 0] += h * self.laplace_operator * self.coordinates[:, 0]
+            self.coordinates[:, 1] += h * self.laplace_operator * self.coordinates[:, 1]
+            self.coordinates[:, 2] += h * self.laplace_operator * self.coordinates[:, 2]
+            self.draw()
+
+    def backwardEuler(self, h):
+        eps = 0.0001
+        f = self.coordinates
+        f[:, 0] = self.inversion * self.coordinates[:, 0]
+        f[:, 1] = self.inversion * self.coordinates[:, 1]
+        f[:, 2] = self.inversion * self.coordinates[:, 2]
+        I = np.identity(self.n) # TO MAYBE REFACTOR: Can be self.laplace_operator.shape[0] instead self.n
+        step = I - h * self.laplace_operator
+        while (self.coordinates - f).any() > eps:
+            self.coordinates[:, 0] = step * self.coordinates[:, 0]
+            self.coordinates[:, 1] = step * self.coordinates[:, 1]
+            self.coordinates[:, 2] = step * self.coordinates[:, 2]
+            self.draw()
+
 
     def smoothen(self):
         if self.laplace_operator is None:
@@ -178,7 +194,6 @@ class Mesh:
 def dragon(): #
     mesh = Mesh.fromobj("teddy.obj")
     mesh.LaplaceOperator()
-    # TODO: Fix problem with get_angles
     mesh.smoothen()
     mesh.draw()
 
