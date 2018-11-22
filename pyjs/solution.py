@@ -48,15 +48,11 @@ class Mesh:
 
         contain = [f for f in self.faces if v in f]
         edges = []
-        # Take edge without `v'
         for face in contain:
             edgs = get_edges(face)
             edges.append(get_opposite_edge(edgs, v))
 
-        # for all that contain v
-        # Enumerate it
         link = list(enumerate(edges))
-        # return link
         return link
 
 
@@ -80,10 +76,7 @@ class Mesh:
             """
             return np.sqrt((x[0] - y[0]) ** 2 + (x[1] - y[1]) ** 2 + (x[2] - y[2]) ** 2)
 
-                                # TO BE REFACTORED
-                                # Use list of one item to proceed, this item can be obtained many different ways
         n = [x for x in link if j == x[1][0]]
-
         init  = hypot(self.coordinates[i], self.coordinates[j])
         prev  = link[n[0][0]-1][0] if n[0][0]-1 >= 0 else link[len(link)-1][0]
         next_ = link[n[0][0]+1][0] if n[0][0]+1 < len(link) else link[0][0]
@@ -137,9 +130,6 @@ class Mesh:
         :param vert:
         :return: list of vertices indexes
         """
-
-                                        # TO REFACTOR:
-                                        # It can be written as an local function def ...
         get_opposite_vertex = lambda e, v: e[0] if v == e[1] else e[1]
 
 
@@ -157,9 +147,6 @@ class Mesh:
 
 
     def forwardEuler(self, h):
-                        # TO MAYBE REFACTOR
-                        # Probably can be done without splitting to axises and use different approach overall
-                        # But keep in mind that inversion matrix should be multiplied by vector L * vx, L * vy, L * vz
         self.coordinates[:, 0] -= h * self.laplace_operator[:self.n] * self.coordinates[:, 0]
         self.coordinates[:, 1] -= h * self.laplace_operator[:self.n] * self.coordinates[:, 1]
         self.coordinates[:, 2] -= h * self.laplace_operator[:self.n] * self.coordinates[:, 2]
@@ -167,12 +154,8 @@ class Mesh:
 
 
     def backwardEuler(self, h):
-        I = np.identity(self.n)             # TO MAYBE REFACTOR: Can be self.laplace_operator.shape[0] instead self.n
-                                            # or you can do it in one line. This is formula for implicit linear system
+        I = np.identity(self.n)
         step = I - (h * self.laplace_operator)
-
-        # TO REFACTOR
-        # For some reason transpoition works only like this. try different approach
         x = np.array(step.dot(self.coordinates[:, 0]))
         y = np.array(step.dot(self.coordinates[:, 1]))
         z = np.array(step.dot(self.coordinates[:, 2]))
@@ -195,8 +178,8 @@ class Mesh:
 
 
     def transform(self, coords, anchors, anchor_coordinates, anchor_weight = 1., explicit=True):
-        # coords np array shape (m, 4) 0th column == vertex index, 1th, 2th, 3th == x, y, z  |# TO REFACTOR better to implement another approach like dict or
-        # anchors is a list of vertex indices arbitrary of length m,                         |# make it the same size as self.coordinates and don't use additional column
+        # coords np array shape (m, 4) 0th column == vertex index, 1th, 2th, 3th == x, y, z
+        # anchors is a list of vertex indices arbitrary of length m,
         # anchor_coordinates is a list of same length of vertex coordinates (m arrays of length 3),
         # anchor_weight is a positive number
         self.coordinates[coords[:, 0].astype('int64')] = coords[:, 1:]
@@ -214,12 +197,16 @@ class Mesh:
         x = self.inversion[:self.n, :self.n].dot(self.coordinates[:, 0])
         y = self.inversion[:self.n, :self.n].dot(self.coordinates[:, 1])
         z = self.inversion[:self.n, :self.n].dot(self.coordinates[:, 2])
+        for i in anchor.keys():
+            x[int(i)] = np.array(anchor[i][0])
+            y[int(i)] = np.array(anchor[i][1])
+            z[int(i)] = np.array(anchor[i][2])
         self.coordinates[:, 0] -= smoothing * x
         self.coordinates[:, 1] -= smoothing * y
         self.coordinates[:, 2] -= smoothing * z
 
 
-def perform():
+def perform_():
     # TO REFACTOR demonstrate the performance
     pass # Implemented in test.ipynb
 
@@ -244,7 +231,7 @@ def dragon():
         show_transform(mesh)
 
 
-    # This function should work with dragon.obj
+    # I was lazy to rewrite code for dragon so it is copypaste from test.ipynb
     mesh = Mesh.fromobj("teddy.obj")
     mesh.draw()
     m = 100
@@ -255,7 +242,6 @@ def dragon():
         anchors.append(rd.randint(0, mesh.n))
     mesh.LaplaceOperator(anchors=anchors)
     perform(mesh)
-
 
 if __name__ == '__main__':
     dragon()
