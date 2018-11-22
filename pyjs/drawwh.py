@@ -15,11 +15,8 @@ def heatmap(value):
 
 def draw(faces, vertices, colorfunc=None):
     # Create the geometry:
-    if colorfunc==None:
-      colorfunc=lambda x:int(x)%10 - 5
-    vertexcolors=[heatmap(colorfunc(i)) for  i in  range(len(vertices))]
     faces = [f + [None, [vertexcolors[i] for i in f], None] for f in faces]
-    geometry = Geometry(faces=faces,vertices=vertices,colors=vertexcolors)
+    geometry = Geometry(faces=faces,vertices=vertices,colors='ff0000')
     # Calculate normals per face, for nice crisp edges:
     #geometry.exec_three_obj_method('computeFaceNormals')
 
@@ -40,5 +37,4 @@ def draw(faces, vertices, colorfunc=None):
 
     renderer = Renderer(camera=camera, background='black', background_opacity=1,
                         scene=scene, controls=[OrbitControls(controlling=camera)])
-
     display(renderer)

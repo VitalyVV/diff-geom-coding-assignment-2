@@ -1,4 +1,4 @@
-import drawwh
+import draw
 import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
@@ -9,6 +9,7 @@ class Mesh:
         self.faces = faces
         vertices = set(i for f in faces for i in f)
         self.n = max(vertices)+1
+        self.laplace_operator = None
         if coordinates != None:
             self.coordinates = np.array(coordinates)
 
@@ -23,12 +24,13 @@ class Mesh:
 
     @classmethod
     def fromobj(cls, filename):
-        faces, vertices = drawwh.obj_read(filename)
+        faces, vertices = draw.obj_read(filename)
         return cls(faces, vertices)
 
 
-    def draw(self):
-        drawwh.draw(self.faces, self.coordinates.tolist())
+    def draw(self, iter=False):
+        draw.draw(self.faces, self.coordinates.tolist())
+
         
 
     def angleDefect(self, vertex): # vertex is an integer (vertex index from 0 to self.n-1)
@@ -102,7 +104,8 @@ class Mesh:
             anchors = []
 
         vertices = set(i for f in self.faces for i in f)
-        matr = scipy.sparse.csr_matrix((self.n, self.n))
+        anchsid = len(anchors) + self.n
+        matr = scipy.sparse.csr_matrix((anchsid, self.n))
 
         for i in vertices:
             for j in self.n_i(i):
@@ -111,8 +114,10 @@ class Mesh:
         # TO REFACTOR
         # It is very ad hoc to calculate sum like this
         for i in range(self.n):
-            matr[i, i] = sum(matr[i].data)
+            matr[i, i] = -sum(matr[i].data)
 
+        for i in range(len(anchors)):
+            matr[self.n + i, i] = 1
 
         self.laplace_operator = matr
         self.compute_inversion()
@@ -148,53 +153,92 @@ class Mesh:
 
 
     def compute_inversion(self):
-        self.inversion = scipy.sparse.linalg.inv(self.laplace_operator.transpose() * self.laplace_operator) * self.laplace_operator
+        self.inversion = scipy.sparse.linalg.inv(self.laplace_operator.transpose() * self.laplace_operator) * self.laplace_operator.transpose()
 
 
     def forwardEuler(self, h):
-
         # TO MAYBE REFACTOR
         # Probably can be done without splitting to axises and use different approach overall
-        eps = 0.0001
-        f = self.coordinates
-        f[:, 0] = self.inversion * self.coordinates[:, 0]
-        f[:, 1] = self.inversion * self.coordinates[:, 1]
-        f[:, 2] = self.inversion * self.coordinates[:, 2]
-        while (self.coordinates - f).any() > eps:
-            self.coordinates[:, 0] += h * self.laplace_operator * self.coordinates[:, 0]
-            self.coordinates[:, 1] += h * self.laplace_operator * self.coordinates[:, 1]
-            self.coordinates[:, 2] += h * self.laplace_operator * self.coordinates[:, 2]
-            self.draw()
+        # But keep in mind that inversion matrix should be multiplied by vector L * vx, L * vy, L * vz
+        self.coordinates[:, 0] -= h * self.laplace_operator[:self.n] * self.coordinates[:, 0]
+        self.coordinates[:, 1] -= h * self.laplace_operator[:self.n] * self.coordinates[:, 1]
+        self.coordinates[:, 2] -= h * self.laplace_operator[:self.n] * self.coordinates[:, 2]
+
+
 
     def backwardEuler(self, h):
-        eps = 0.0001
-        f = self.coordinates
-        f[:, 0] = self.inversion * self.coordinates[:, 0]
-        f[:, 1] = self.inversion * self.coordinates[:, 1]
-        f[:, 2] = self.inversion * self.coordinates[:, 2]
         I = np.identity(self.n) # TO MAYBE REFACTOR: Can be self.laplace_operator.shape[0] instead self.n
-        step = I - h * self.laplace_operator
-        while (self.coordinates - f).any() > eps:
-            self.coordinates[:, 0] = step * self.coordinates[:, 0]
-            self.coordinates[:, 1] = step * self.coordinates[:, 1]
-            self.coordinates[:, 2] = step * self.coordinates[:, 2]
-            self.draw()
+        # or you can do it in one line. This is formula for implicit linear system
+        step = I - (h * self.laplace_operator)
+
+        # TO REFACTOR
+        # For some reason transpoition works only like this. try different approach
+        x = np.array(step.dot(self.coordinates[:, 0]))
+        y = np.array(step.dot(self.coordinates[:, 1]))
+        z = np.array(step.dot(self.coordinates[:, 2]))
+        self.coordinates[:, 0] = x[0].T
+        self.coordinates[:, 1] = y[0].T
+        self.coordinates[:, 2] = z[0].T
 
 
-    def smoothen(self):
+    def smoothen(self, explicit=True):
+        # Basically method contains an error because of using weak Laplacian
+        # The computation error grows and the coefficient h is stoping it
+        # such that than lesser h than more steps it is possible to do before it starts deforming
         if self.laplace_operator is None:
             raise NotImplementedError
         else:
+            if explicit:
+                self.forwardEuler(0.0000001)
+            else:
+                self.backwardEuler(0.0000001)
+
+
+    def transform(self, coords, anchors, anchor_coordinates, anchor_weight = 1., explicit=True):
+        # coords np array shape (m, 4) 0th column == vertex index, 1th, 2th, 3th == x, y, z  |# TO REFACTOR better to implement another approach like dict or
+        # anchors is a list of vertex indices arbitrary of length m,                         |# make it the same size as self.coordinates and don't use additional column
+        # anchor_coordinates is a list of same length of vertex coordinates (m arrays of length 3),
+        # anchor_weight is a positive number
+        self.coordinates[coords[:, 0].astype('int64')] = coords[:, 1:]
+
+        if explicit:
             self.forwardEuler(0.001)
+            self.reconstruct(dict(zip(anchors, anchor_coordinates)), smoothing=anchor_weight)
+        else:
+            self.backwardEuler(0.001)
+            self.reconstruct(dict(zip(anchors, anchor_coordinates)), smoothing=anchor_weight)
 
 
-    def transform(self, anchors, anchor_coordinates, anchor_weight = 1.):# anchors is a list of vertex indices, anchor_coordinates is a list of same length of vertex coordinates (arrays of length 3), anchor_weight is a positive number
-        raise NotImplementedError
+    def reconstruct(self, anchor, smoothing):
+        # NOT SURE WHAT THIS FUNCTION SHOULD DO WITH ANCHORS
+        x = self.inversion.dot(self.coordinates[:, 0])
+        y = self.inversion.dot(self.coordinates[:, 1])
+        z = self.inversion.dot(self.coordinates[:, 2])
+        self.coordinates[:, 0] = smoothing * x
+        self.coordinates[:, 1] = smoothing * y
+        self.coordinates[:, 2] = smoothing * z
 
-def dragon(): #
+
+def perform():
+    pass # Implemented in test.ipynb
+
+
+def dragon():
+    import random as rd
     mesh = Mesh.fromobj("teddy.obj")
+    m = 100
+    anchors = []
+    for i in range(m):
+        anchors.append(rd.randint(0, mesh.n))
+    mesh.LaplaceOperator(anchors=anchors)
     mesh.LaplaceOperator()
     mesh.smoothen()
+    coords = np.zeros((m, 4))
+    for i in range(m):
+        coords[i, 0] = rd.randint(0, len(mesh.coordinates))
+        coords[i, 1:] = mesh.coordinates[int(coords[i, 0]), :] + 5
+
+    mesh.transform(coords, anchors, mesh.coordinates[anchors], explicit=True)
     mesh.draw()
 
 
