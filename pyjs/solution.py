@@ -28,7 +28,7 @@ class Mesh:
         return cls(faces, vertices)
 
 
-    def draw(self, iter=False):
+    def draw(self):
         draw.draw(self.faces, self.coordinates.tolist())
 
         
@@ -80,8 +80,8 @@ class Mesh:
             """
             return np.sqrt((x[0] - y[0]) ** 2 + (x[1] - y[1]) ** 2 + (x[2] - y[2]) ** 2)
 
-        # TO BE REFACTORED
-        # Use list of one item to proceed, this item can be obtained many different ways
+                                # TO BE REFACTORED
+                                # Use list of one item to proceed, this item can be obtained many different ways
         n = [x for x in link if j == x[1][0]]
 
         init  = hypot(self.coordinates[i], self.coordinates[j])
@@ -111,8 +111,8 @@ class Mesh:
             for j in self.n_i(i):
                 matr[i,j] = self.cotan(i, j)
 
-        # TO REFACTOR
-        # It is very ad hoc to calculate sum like this
+                                        # TO REFACTOR
+                                        # It is very ad hoc to calculate sum like this
         for i in range(self.n):
             matr[i, i] = -sum(matr[i].data)
 
@@ -138,8 +138,8 @@ class Mesh:
         :return: list of vertices indexes
         """
 
-        # TO REFACTOR:
-        # It can be written as an local function def ...
+                                        # TO REFACTOR:
+                                        # It can be written as an local function def ...
         get_opposite_vertex = lambda e, v: e[0] if v == e[1] else e[1]
 
 
@@ -157,9 +157,9 @@ class Mesh:
 
 
     def forwardEuler(self, h):
-        # TO MAYBE REFACTOR
-        # Probably can be done without splitting to axises and use different approach overall
-        # But keep in mind that inversion matrix should be multiplied by vector L * vx, L * vy, L * vz
+                        # TO MAYBE REFACTOR
+                        # Probably can be done without splitting to axises and use different approach overall
+                        # But keep in mind that inversion matrix should be multiplied by vector L * vx, L * vy, L * vz
         self.coordinates[:, 0] -= h * self.laplace_operator[:self.n] * self.coordinates[:, 0]
         self.coordinates[:, 1] -= h * self.laplace_operator[:self.n] * self.coordinates[:, 1]
         self.coordinates[:, 2] -= h * self.laplace_operator[:self.n] * self.coordinates[:, 2]
@@ -167,8 +167,8 @@ class Mesh:
 
 
     def backwardEuler(self, h):
-        I = np.identity(self.n) # TO MAYBE REFACTOR: Can be self.laplace_operator.shape[0] instead self.n
-        # or you can do it in one line. This is formula for implicit linear system
+        I = np.identity(self.n)             # TO MAYBE REFACTOR: Can be self.laplace_operator.shape[0] instead self.n
+                                            # or you can do it in one line. This is formula for implicit linear system
         step = I - (h * self.laplace_operator)
 
         # TO REFACTOR
@@ -202,44 +202,59 @@ class Mesh:
         self.coordinates[coords[:, 0].astype('int64')] = coords[:, 1:]
 
         if explicit:
-            self.forwardEuler(0.001)
             self.reconstruct(dict(zip(anchors, anchor_coordinates)), smoothing=anchor_weight)
+            self.forwardEuler(0.00000001)
         else:
-            self.backwardEuler(0.001)
             self.reconstruct(dict(zip(anchors, anchor_coordinates)), smoothing=anchor_weight)
+            self.backwardEuler(0.00000001)
 
 
     def reconstruct(self, anchor, smoothing):
         # NOT SURE WHAT THIS FUNCTION SHOULD DO WITH ANCHORS
-        x = self.inversion.dot(self.coordinates[:, 0])
-        y = self.inversion.dot(self.coordinates[:, 1])
-        z = self.inversion.dot(self.coordinates[:, 2])
-        self.coordinates[:, 0] = smoothing * x
-        self.coordinates[:, 1] = smoothing * y
-        self.coordinates[:, 2] = smoothing * z
+        x = self.inversion[:self.n, :self.n].dot(self.coordinates[:, 0])
+        y = self.inversion[:self.n, :self.n].dot(self.coordinates[:, 1])
+        z = self.inversion[:self.n, :self.n].dot(self.coordinates[:, 2])
+        self.coordinates[:, 0] -= smoothing * x
+        self.coordinates[:, 1] -= smoothing * y
+        self.coordinates[:, 2] -= smoothing * z
 
 
 def perform():
+    # TO REFACTOR demonstrate the performance
     pass # Implemented in test.ipynb
 
 
 def dragon():
-    import random as rd
+    def show_smoothing(mesh):
+        mesh.smoothen()
+        mesh.draw()
+
+    def show_transform(mesh, m=100):
+        import random as rd
+        coords = np.zeros((m, 4))
+        for i in range(m):
+            coords[i, 0] = rd.randint(0, len(mesh.coordinates))
+            coords[i, 1:] = mesh.coordinates[int(coords[i, 0]), :] + 5
+
+        mesh.transform(coords, anchors, mesh.coordinates[anchors], explicit=True)
+        mesh.draw()
+
+    def perform(mesh):
+        show_smoothing(mesh)
+        show_transform(mesh)
+
+
+    # This function should work with dragon.obj
     mesh = Mesh.fromobj("teddy.obj")
+    mesh.draw()
     m = 100
+
+    import random as rd
     anchors = []
     for i in range(m):
         anchors.append(rd.randint(0, mesh.n))
     mesh.LaplaceOperator(anchors=anchors)
-    mesh.LaplaceOperator()
-    mesh.smoothen()
-    coords = np.zeros((m, 4))
-    for i in range(m):
-        coords[i, 0] = rd.randint(0, len(mesh.coordinates))
-        coords[i, 1:] = mesh.coordinates[int(coords[i, 0]), :] + 5
-
-    mesh.transform(coords, anchors, mesh.coordinates[anchors], explicit=True)
-    mesh.draw()
+    perform(mesh)
 
 
 if __name__ == '__main__':
